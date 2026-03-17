@@ -1,0 +1,57 @@
+// InfraPulse - Prisma schema
+// Clerk handles Users & Organizations; we only store clerkOrgId on resources.
+// No User or Tenant models.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  hostname    String
+  ip          String
+  status      String   @default("unknown") // unknown | healthy | warning | critical | down
+  tags        String[] @default([])
+  clerkOrgId  String   // Clerk Organization ID (tenant)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  alerts Alert[]
+
+  @@index([clerkOrgId])
+  @@index([ip])
+}
+
+model Alert {
+  id           String   @id @default(cuid())
+  deviceId     String
+  message      String
+  severity     String   // info | warning | critical
+  isPredictive Boolean  @default(false)
+  clerkOrgId   String
+  timestamp    DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([clerkOrgId])
+  @@index([deviceId])
+  @@index([timestamp])
+}
+
+// Long-lived API keys for edge devices (headless). Maps key -> clerkOrgId.
+// Validate via x-api-key header on ingestion routes (e.g. POST /api/devices/register).
+model ApiKey {
+  id         String   @id @default(cuid())
+  clerkOrgId String
+  keyHash    String   // Store hashed key only (e.g. SHA-256)
+  name       String?  // Optional label, e.g. "Raspberry Pi - Site A"
+  createdAt  DateTime @default(now())
+
+  @@unique([keyHash])
+  @@index([clerkOrgId])
+}

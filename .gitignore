@@ -1,0 +1,49 @@
+﻿# InfraPulse - Root .gitignore
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+
+# Build / output
+dist/
+dist-ssr/
+build/
+*.egg-info/
+.eggs/
+
+# Logs & debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Prisma
+backend-node/prisma/migrations/
+
+# Optional: uncomment if you want to exclude Docker volumes data
+# data/

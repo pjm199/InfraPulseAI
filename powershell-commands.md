@@ -1,0 +1,1 @@
+New-NetFirewallRule -DisplayName "Windows Exporter 9182" -Direction Inbound -Protocol TCP -LocalPort 9182 -Action Allow

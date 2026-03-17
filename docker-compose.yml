@@ -1,0 +1,148 @@
+# InfraPulse - Distributed Observability Platform
+# Phase 1: Infrastructure & Observability Foundation
+# Run: docker compose up -d
+
+services:
+  # ---------------------------------------------------------------------------
+  # Databases
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: infrapulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-infrapulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infrapulse_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-infrapulse}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infrapulse} -d ${POSTGRES_DB:-infrapulse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infrapulse
+
+  # ---------------------------------------------------------------------------
+  # Observability Stack
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.47.2
+    container_name: infrapulse-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus_targets:/etc/prometheus/targets:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - infrapulse
+
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: infrapulse-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    networks:
+      - infrapulse
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: infrapulse-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_INSTALL_PLUGINS: "grafana-clock-panel"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    networks:
+      - infrapulse
+
+  # ---------------------------------------------------------------------------
+  # Application Backends
+  # ---------------------------------------------------------------------------
+  backend-node:
+    build:
+      context: ./backend-node
+      dockerfile: Dockerfile
+    container_name: infrapulse-backend-node
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-infrapulse}:${POSTGRES_PASSWORD:-infrapulse_secret}@postgres:5432/${POSTGRES_DB:-infrapulse}
+      PORT: 3000
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      PROMETHEUS_TARGETS_FILE: /app/prometheus_targets/edge_nodes.json
+    volumes:
+      - ./observability/prometheus_targets:/app/prometheus_targets
+    ports:
+      - "${BACKEND_NODE_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - infrapulse
+
+  backend-python:
+    build:
+      context: ./backend-python
+      dockerfile: Dockerfile
+    container_name: infrapulse-backend-python
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-infrapulse}:${POSTGRES_PASSWORD:-infrapulse_secret}@postgres:5432/${POSTGRES_DB:-infrapulse}
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      BACKEND_NODE_URL: http://backend-node:3000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      RUN_WORKER: ${RUN_WORKER:-1}
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-900}
+      METRICS_LOOKBACK_HOURS: ${METRICS_LOOKBACK_HOURS:-6}
+    ports:
+      - "${BACKEND_PYTHON_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+      backend-node:
+        condition: service_started
+    networks:
+      - infrapulse
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+
+networks:
+  infrapulse:
+    driver: bridge

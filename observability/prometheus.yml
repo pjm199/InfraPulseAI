@@ -1,0 +1,71 @@
+# InfraPulse - Prometheus configuration
+# Scrapes Prometheus itself and edge nodes (via file_sd or static targets).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alerting (optional; can be wired in Phase 5)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: []
+
+# Rule files (optional)
+# rule_files:
+#   - "alerts.yml"
+
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Scrape Prometheus itself
+  # ---------------------------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          env: central
+          role: prometheus
+
+  # ---------------------------------------------------------------------------
+  # Edge nodes: Node Exporter (Linux, port 9100)
+  # Targets from observability/prometheus_targets/edge_nodes.json (label job=node-exporter).
+  # ---------------------------------------------------------------------------
+  - job_name: node-exporter
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/edge_nodes.json
+        refresh_interval: 30s
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [job]
+        regex: node-exporter
+        action: keep
+
+  # ---------------------------------------------------------------------------
+  # Windows nodes: Windows Exporter (port 9182)
+  # Same file; devices with tag "windows" get job=windows-exporter.
+  # ---------------------------------------------------------------------------
+  - job_name: windows-exporter
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/edge_nodes.json
+        refresh_interval: 30s
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [job]
+        regex: windows-exporter
+        action: keep
+
+  # ---------------------------------------------------------------------------
+  # Fallback: static list of edge nodes (optional)
+  # Add entries here or rely on file_sd from edge_nodes.json
+  # ---------------------------------------------------------------------------
+  # - job_name: node-exporter-static
+  #   static_configs:
+  #     - targets:
+  #         - "edge-node-1:9100"
+  #         - "edge-node-2:9100"
+  #       labels:
+  #         env: edge
