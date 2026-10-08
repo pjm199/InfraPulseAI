@@ -24,7 +24,7 @@ def db_cursor():
         conn.close()
 
 
-def fetch_devices() -> list[dict[str, Any]]:
+def fetch_devices(clerk_org_id: str | None = None) -> list[dict[str, Any]]:
     """Return all registered devices (id, hostname, ip, status, clerk_org_id, tags)."""
     with db_cursor() as cur:
         cur.execute(
@@ -32,8 +32,10 @@ def fetch_devices() -> list[dict[str, Any]]:
             SELECT id, hostname, ip, status, "clerkOrgId" AS clerk_org_id, tags
             FROM "Device"
             WHERE status != 'down'
+              AND (%s IS NULL OR "clerkOrgId" = %s)
             ORDER BY "updatedAt" DESC
-            """
+            """,
+            (clerk_org_id, clerk_org_id),
         )
         rows = cur.fetchall()
         out = []
@@ -45,7 +47,7 @@ def fetch_devices() -> list[dict[str, Any]]:
         return out
 
 
-def fetch_recent_alerts(limit: int = 50) -> list[dict[str, Any]]:
+def fetch_recent_alerts(limit: int = 50, clerk_org_id: str | None = None) -> list[dict[str, Any]]:
     """Return recent alerts with device hostname/ip."""
     with db_cursor() as cur:
         cur.execute(
@@ -54,10 +56,11 @@ def fetch_recent_alerts(limit: int = 50) -> list[dict[str, Any]]:
                    d.hostname, d.ip
             FROM "Alert" a
             JOIN "Device" d ON d.id = a."deviceId"
+            WHERE (%s IS NULL OR a."clerkOrgId" = %s)
             ORDER BY a.timestamp DESC
             LIMIT %s
             """,
-            (limit,),
+            (clerk_org_id, clerk_org_id, limit),
         )
         return [dict(row) for row in cur.fetchall()]
 

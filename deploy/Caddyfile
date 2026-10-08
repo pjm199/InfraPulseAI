@@ -1,0 +1,10 @@
+{$PUBLIC_HOST} {
+  root * /srv
+  encode gzip
+
+  @api path /api/* /health /ready
+  reverse_proxy @api backend-node:3000
+
+  try_files {path} /index.html
+  file_server
+}

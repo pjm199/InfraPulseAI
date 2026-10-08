@@ -1,0 +1,130 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+
+  prometheus:
+    image: prom/prometheus:v2.47.2
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus_targets:/etc/prometheus/targets:ro
+      - prometheus_data:/prometheus
+    networks: [private]
+
+  loki:
+    image: grafana/loki:2.9.2
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    networks: [private]
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [private]
+
+  backend-node:
+    build:
+      context: ./backend-node
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PORT: 3000
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      BACKEND_PYTHON_URL: http://backend-python:8000
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+      CORS_ORIGINS: ${PUBLIC_URL}
+      PROMETHEUS_TARGETS_FILE: /app/prometheus_targets/edge_nodes.json
+    volumes:
+      - ./observability/prometheus_targets:/app/prometheus_targets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend-python:
+        condition: service_started
+    networks: [private]
+
+  backend-python:
+    build:
+      context: ./backend-python
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      BACKEND_NODE_URL: http://backend-node:3000
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+      RUN_WORKER: ${RUN_WORKER:-1}
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-900}
+      METRICS_LOOKBACK_HOURS: ${METRICS_LOOKBACK_HOURS:-6}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    networks: [private]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+    restart: unless-stopped
+    depends_on:
+      backend-node:
+        condition: service_started
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [private]
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  private:
+    driver: bridge

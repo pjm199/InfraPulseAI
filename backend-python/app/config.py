@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     loki_url: str = "http://localhost:3100"
     backend_node_url: str = "http://localhost:3000"
     openai_api_key: str = ""
+    internal_api_token: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""  # Chat ID to send alerts to (required for Telegram)
     worker_interval_seconds: int = 900  # 15 min

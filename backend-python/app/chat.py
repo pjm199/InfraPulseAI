@@ -12,13 +12,13 @@ from app.database import fetch_devices, fetch_recent_alerts
 from app.prometheus_fetcher import fetch_cpu_memory_disk_for_devices
 
 
-def build_context() -> str:
+def build_context(clerk_org_id: str) -> str:
     """Build a text summary of current infrastructure state for the LLM."""
-    devices = fetch_devices()
+    devices = fetch_devices(clerk_org_id)
     if not devices:
         return "No devices registered."
     metrics = fetch_cpu_memory_disk_for_devices(devices, lookback_hours=1)
-    alerts = fetch_recent_alerts(50)
+    alerts = fetch_recent_alerts(50, clerk_org_id)
     lines = [
         "=== Registered devices ===",
         json.dumps([{"id": d["id"], "hostname": d["hostname"], "ip": d["ip"], "status": d["status"]} for d in devices], indent=2),
@@ -31,11 +31,11 @@ def build_context() -> str:
     return "\n".join(lines)
 
 
-def chat(user_message: str) -> str:
+def chat(user_message: str, clerk_org_id: str) -> str:
     """Answer a natural language question about infrastructure using OpenAI."""
     if not settings.openai_api_key:
         return "OpenAI API key is not configured; cannot answer questions."
-    context = build_context()
+    context = build_context(clerk_org_id)
     client = OpenAI(api_key=settings.openai_api_key)
     response = client.chat.completions.create(
         model="gpt-4o-mini",

@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+**/node_modules
+**/.cache
+**/dist
+**/build
+.env
+.env.*
+!.env.production.example
+*.log
+*.zip
+docs
+*.md

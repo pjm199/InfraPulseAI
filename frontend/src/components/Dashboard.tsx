@@ -27,7 +27,7 @@ type Alert = {
 
 // Use empty string in dev so requests go to same origin and Vite proxy forwards to backends (avoids CORS)
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
-const AI_BASE = import.meta.env.VITE_AI_BASE_URL ?? ''
+const AI_BASE = import.meta.env.VITE_AI_BASE_URL ?? API_BASE
 
 export function Dashboard() {
   const { getToken } = useAuth()
@@ -68,8 +68,8 @@ export function Dashboard() {
         axios.get<Device[]>(`${API_BASE}/api/devices`, { headers }),
         axios.get<Alert[]>(`${API_BASE}/api/alerts`, { headers }),
       ])
-      setDevices(dRes.data)
-      setAlerts(aRes.data)
+      setDevices(Array.isArray(dRes.data) ? dRes.data : [])
+      setAlerts(Array.isArray(aRes.data) ? aRes.data : [])
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch devices/alerts', e)
@@ -114,17 +114,18 @@ export function Dashboard() {
     setMetricsLoading(true)
     const deviceId = selectedDevice.id
     const base = AI_BASE || API_BASE
-    axios
-      .get<{ cpu_pct: number | null; memory_pct: number | null; disk_pct: number | null }>(
+    getToken()
+      .then((token) => axios.get<{ cpu_pct: number | null; memory_pct: number | null; disk_pct: number | null }>(
         `${base}/api/metrics`,
         {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
           params: {
             hostname: selectedDevice.hostname,
             ip: selectedDevice.ip,
             ...(selectedDevice.tags?.length ? { tags: selectedDevice.tags.join(',') } : {}),
           },
         },
-      )
+      ))
       .then((res) => {
         if (selectedDeviceId === deviceId) setDeviceMetrics(res.data)
         setMetricsLoading(false)
@@ -144,10 +145,11 @@ export function Dashboard() {
     setChatLoading(true)
     setChatReply(null)
     try {
+      const token = await getToken()
       const res = await axios.post<{ reply: string }>(
         `${AI_BASE}/api/chat`,
         { message: chatInput },
-        { withCredentials: false },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {}, withCredentials: false },
       )
       setChatReply(res.data.reply)
     } catch (err) {
